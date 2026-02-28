@@ -6,14 +6,15 @@ extracts the Bay of Bengal region, computes monthly spatial means,
 and produces a full time series analysis with plots.
 
 Requirements:
-    pip install netCDF4 numpy pandas matplotlib scipy
+    pip install numpy pandas matplotlib scipy
 
 Usage:
-    1. Set FOLDER_PATH to the directory containing your .nc files.
-    2. Run:  python bay_of_bengal_sss_analysis.py
-    3. Outputs will be saved in the same folder as this script.
+    python bay_of_bengal_sss_analysis.py [folder] [-o output_dir]
+    Outputs will be saved in the script directory by default.
 """
 
+import argparse
+import logging
 import os
 import re
 import glob
@@ -27,10 +28,25 @@ from matplotlib.gridspec import GridSpec
 from scipy import stats
 from scipy.signal import savgol_filter
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CONFIGURATION — edit this path
-# ─────────────────────────────────────────────────────────────────────────────
-FOLDER_PATH = r"C:\path\to\your\netcdf\files"   # <-- change this
+log = logging.getLogger(__name__)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Bay of Bengal SSS Analysis from NetCDF files"
+    )
+    parser.add_argument(
+        "folder",
+        nargs="?",
+        default=os.environ.get("SSS_DATA_DIR", "."),
+        help="Path to directory containing .nc files (default: current dir or $SSS_DATA_DIR)"
+    )
+    parser.add_argument(
+        "--output-dir", "-o",
+        default=None,
+        help="Output directory for CSV and plots (default: script directory)"
+    )
+    return parser.parse_args()
 
 # Bay of Bengal bounding box
 BOB_LAT_MIN, BOB_LAT_MAX =  5.0, 25.0
@@ -107,9 +123,6 @@ def read_nc_file(filepath: str):
     # ── Coordinate arrays (1-D, key_len=24) ──────────────────────────────
     # Longitude: decompresses to 5760 bytes = 1440 × float32
     # Latitude:  decompresses to 2880 bytes = 720  × float32
-    coord_trees = [t for t in trees
-                   if read_tree_chunk(raw, t, 24)[0] < 5_000]
-
     lons = lats = None
     for t in trees:
         cs, child = read_tree_chunk(raw, t, 24)
@@ -180,7 +193,20 @@ def parse_date(filepath: str):
 # MAIN PROCESSING LOOP
 # ─────────────────────────────────────────────────────────────────────────────
 
-def process_files(folder: str):
+def process_files(folder: str) -> pd.DataFrame:
+    """
+    Process all NetCDF files in a folder and extract Bay of Bengal SSS.
+
+    Parameters
+    ----------
+    folder : str
+        Path to directory containing .nc files.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: year, month, date, sss_mean, sss_std, n_valid
+    """
     files = sorted(glob.glob(os.path.join(folder, "*.nc")))
     if not files:
         raise FileNotFoundError(f"No .nc files found in: {folder}")
@@ -213,8 +239,10 @@ def process_files(folder: str):
             print(f"  [{i:3d}/{len(files)}] {year}-{month:02d}  SSS mean = {mean_sss:.3f} psu  "
                   f"(n={n_valid:,})")
 
+        except (ValueError, zlib.error) as e:
+            log.warning("SKIPPED %s: %s", os.path.basename(fp), e)
         except Exception as e:
-            print(f"  [{i:3d}/{len(files)}] SKIPPED {os.path.basename(fp)}: {e}")
+            log.error("Unexpected error processing %s: %s", os.path.basename(fp), e, exc_info=True)
 
     df = pd.DataFrame(records).sort_values("date").reset_index(drop=True)
     return df
@@ -414,19 +442,24 @@ def analyse_and_plot(df: pd.DataFrame, out_csv: str, out_plot: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    if not os.path.isdir(FOLDER_PATH):
-        print(f"ERROR: Folder not found: {FOLDER_PATH}")
-        print("Please edit FOLDER_PATH at the top of this script.")
+    logging.basicConfig(level=logging.INFO,
+                        format="%(levelname)s: %(message)s")
+    args = parse_args()
+
+    if not os.path.isdir(args.folder):
+        print(f"ERROR: Folder not found: {args.folder}")
+        print("Provide a valid path as a positional argument or set $SSS_DATA_DIR.")
         exit(1)
 
-    df = process_files(FOLDER_PATH)
+    df = process_files(args.folder)
 
     if df.empty:
         print("No data extracted. Check your file paths and formats.")
         exit(1)
 
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    out_csv  = os.path.join(script_dir, OUTPUT_CSV)
-    out_plot = os.path.join(script_dir, OUTPUT_PLOT)
+    out_dir = args.output_dir if args.output_dir else os.path.dirname(os.path.abspath(__file__))
+    os.makedirs(out_dir, exist_ok=True)
+    out_csv  = os.path.join(out_dir, OUTPUT_CSV)
+    out_plot = os.path.join(out_dir, OUTPUT_PLOT)
 
     analyse_and_plot(df, out_csv, out_plot)
