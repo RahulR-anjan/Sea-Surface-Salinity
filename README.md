@@ -65,18 +65,3 @@ Sea-Surface-Salinity/
 ├── bay_of_bengal_sss_plot.py     # Visualization
 └── requirements.txt               # (add this)
 ```
-
-## Motivation / context
-
-<!-- Optional but valuable for a PhD-facing repo: 1-2 sentences on why you chose
-this — course project? personal interest tied to your earth science background?
-connection to your Sundarbans article/coastal vulnerability interests? Reviewers
-like seeing a thread connecting your work. -->
-
-## Future work
-
-<!-- Optional: e.g. extend to multi-year trend analysis, correlate with cyclone
-data, compare with in-situ buoy measurements, ML-based prediction -->
-
----
-*Part of ongoing work in applied ML/environmental science. See also: [air-quality-dashboard](link).*
